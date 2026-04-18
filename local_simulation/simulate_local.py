@@ -3,9 +3,20 @@ import numpy as np
 import pandas as pd
 from baseline_model.model import get_baseline_model
 from baseline_model.custom_strategy import SaveModelStrategy
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    confusion_matrix,
+    roc_auc_score,
+    log_loss,
+    accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+)
+from server import aggregate_metrics
 
 
-# Mock Client mirroring the hospital clients
+# Mock Client mirroring the production hospital clients
 class MockClient(fl.client.NumPyClient):
     def __init__(self, hospital_id):
         self.hospital_id = hospital_id
@@ -14,14 +25,21 @@ class MockClient(fl.client.NumPyClient):
         df = pd.read_parquet(
             f"local_simulation/dummy_data/hospital_{hospital_id}.parquet"
         )
-        df.fillna(df.median(numeric_only=True), inplace=True)  # Mock median imputation
+        df.fillna(df.median(numeric_only=True), inplace=True)
         df.fillna(0, inplace=True)
 
-        self.X = df.drop(columns=["SepsisLabel"]).values
-        self.y = df["SepsisLabel"].values
+        X = df.drop(columns=["SepsisLabel"]).values
+        y = df["SepsisLabel"].values
+
+        # Split just like the real hospitals
+        self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
 
         self.model = get_baseline_model()
-        self.model.fit(self.X[:2], self.y[:2])  # Mock initial fit
+        dummy_X = np.zeros((2, self.X_train.shape[1]))
+        dummy_y = np.array([0, 1])
+        self.model.fit(dummy_X, dummy_y)
 
     def get_parameters(self, config):
         return [self.model.coef_, self.model.intercept_]
@@ -29,8 +47,38 @@ class MockClient(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.model.coef_ = parameters[0]
         self.model.intercept_ = parameters[1]
-        self.model.fit(self.X, self.y)
-        return self.get_parameters(config), len(self.X), {}
+        self.model.fit(self.X_train, self.y_train)
+        return self.get_parameters(config), len(self.X_train), {}
+
+    def evaluate(self, parameters, config):
+        self.model.coef_ = parameters[0]
+        self.model.intercept_ = parameters[1]
+
+        y_pred = self.model.predict(self.X_val)
+        y_proba = self.model.predict_proba(self.X_val)[:, 1]
+
+        tn, fp, fn, tp = confusion_matrix(self.y_val, y_pred, labels=[0, 1]).ravel()
+        cost_score = int(fp) + int(fn) * 5
+
+        return (
+            float(cost_score),
+            len(self.X_val),
+            {
+                "cost_score": float(cost_score),
+                "false_positives": int(fp),
+                "false_negatives": int(fn),
+                "true_positives": int(tp),
+                "true_negatives": int(tn),
+                "auroc": float(roc_auc_score(self.y_val, y_proba)),
+                "log_loss": float(log_loss(self.y_val, y_proba)),
+                "accuracy": float(accuracy_score(self.y_val, y_pred)),
+                "f1_score": float(f1_score(self.y_val, y_pred, zero_division=0)),
+                "precision": float(
+                    precision_score(self.y_val, y_pred, zero_division=0)
+                ),
+                "recall": float(recall_score(self.y_val, y_pred, zero_division=0)),
+            },
+        )
 
 
 def client_fn(cid: str) -> fl.client.Client:
@@ -39,7 +87,12 @@ def client_fn(cid: str) -> fl.client.Client:
 
 if __name__ == "__main__":
     print("Starting Local Simulation...")
-    strategy = SaveModelStrategy(min_fit_clients=5, min_available_clients=5)
+    strategy = SaveModelStrategy(
+        min_fit_clients=5,
+        min_evaluate_clients=5,
+        min_available_clients=5,
+        evaluate_metrics_aggregation_fn=aggregate_metrics,
+    )
 
     fl.simulation.start_simulation(
         client_fn=client_fn,
