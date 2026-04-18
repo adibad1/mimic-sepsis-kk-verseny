@@ -4,7 +4,9 @@ import base64
 from typing import List, Tuple, Dict
 from flwr.common import Metrics
 from baseline_model.custom_strategy import SaveModelStrategy
-from baseline_model.model import get_model, set_model_parameters
+from baseline_model.model import get_model, get_model_parameters
+
+# from baseline_model.model import get_model, get_model_parameters
 
 
 def aggregate_metrics(metrics: List[Tuple[int, Metrics]]) -> Dict[str, float]:
@@ -65,20 +67,22 @@ def get_on_fit_config_fn():
 
 
 def main():
-    print("Starting Central FL Server on port 8080...")
+    print("Starting Central FL Server with Dynamic Pipelines...")
 
-    # ⚠️ CRITICAL RULE: min_fit_clients and min_available_clients MUST be 5.
+    # 1. Generate initial parameters locally on the server
+    # This ensures the server knows the 'shape' of the model from the start
+    init_model = get_model()
+    initial_params = fl.common.ndarrays_to_parameters(get_model_parameters(init_model))
+
     strategy = SaveModelStrategy(
         min_fit_clients=5,
-        min_evaluate_clients=5,  # Ensure all 5 hospitals evaluate the model
         min_available_clients=5,
-        fraction_fit=1.0,
-        fraction_evaluate=1.0,
+        min_evaluate_clients=5,
         on_fit_config_fn=get_on_fit_config_fn(),
-        evaluate_metrics_aggregation_fn=aggregate_metrics,  # Use our new smart aggregator
+        initial_parameters=initial_params,
+        evaluate_metrics_aggregation_fn=aggregate_metrics,  # <--- ADD THIS LINE
     )
 
-    # Start the server
     fl.server.start_server(
         server_address="0.0.0.0:8080",
         config=fl.server.ServerConfig(num_rounds=5),
