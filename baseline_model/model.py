@@ -51,7 +51,6 @@ def get_model():
                 PolynomialFeatures(degree=2, interaction_only=True),
             ),  # Multiplications
             ("scaler", StandardScaler()),  # Normalization
-            ("pca", PCA(n_components=0.95)),  # PCA (keep 95% variance)
             ("clf", LogisticRegression(warm_start=True, max_iter=1)),
         ]
     )
