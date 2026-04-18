@@ -1,7 +1,6 @@
 import flwr as fl
-import numpy as np
 import pandas as pd
-from baseline_model.model import get_baseline_model
+from baseline_model.model import get_model, get_model_parameters, set_model_parameters
 from baseline_model.custom_strategy import SaveModelStrategy
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
@@ -36,23 +35,18 @@ class MockClient(fl.client.NumPyClient):
             X, y, test_size=0.2, random_state=42
         )
 
-        self.model = get_baseline_model()
-        dummy_X = np.zeros((2, self.X_train.shape[1]))
-        dummy_y = np.array([0, 1])
-        self.model.fit(dummy_X, dummy_y)
+        self.model = get_model()
 
     def get_parameters(self, config):
-        return [self.model.coef_, self.model.intercept_]
+        return get_model_parameters(self.model)
 
     def fit(self, parameters, config):
-        self.model.coef_ = parameters[0]
-        self.model.intercept_ = parameters[1]
+        set_model_parameters(self.model, parameters)
         self.model.fit(self.X_train, self.y_train)
         return self.get_parameters(config), len(self.X_train), {}
 
     def evaluate(self, parameters, config):
-        self.model.coef_ = parameters[0]
-        self.model.intercept_ = parameters[1]
+        set_model_parameters(self.model, parameters)
 
         y_pred = self.model.predict(self.X_val)
         y_proba = self.model.predict_proba(self.X_val)[:, 1]

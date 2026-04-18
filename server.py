@@ -1,7 +1,10 @@
 import flwr as fl
+import cloudpickle
+import base64
 from typing import List, Tuple, Dict
 from flwr.common import Metrics
 from baseline_model.custom_strategy import SaveModelStrategy
+from baseline_model.model import get_model, set_model_parameters
 
 
 def aggregate_metrics(metrics: List[Tuple[int, Metrics]]) -> Dict[str, float]:
@@ -50,6 +53,17 @@ def aggregate_metrics(metrics: List[Tuple[int, Metrics]]) -> Dict[str, float]:
     }
 
 
+def get_on_fit_config_fn():
+    model_obj = get_model()
+    model_bytes = cloudpickle.dumps(model_obj)
+    model_b64 = base64.b64encode(model_bytes).decode("utf-8")
+
+    def fit_config(_server_round: int):
+        return {"model_bytes": model_b64}
+
+    return fit_config
+
+
 def main():
     print("Starting Central FL Server on port 8080...")
 
@@ -60,6 +74,7 @@ def main():
         min_available_clients=5,
         fraction_fit=1.0,
         fraction_evaluate=1.0,
+        on_fit_config_fn=get_on_fit_config_fn(),
         evaluate_metrics_aggregation_fn=aggregate_metrics,  # Use our new smart aggregator
     )
 
