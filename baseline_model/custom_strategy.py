@@ -1,9 +1,10 @@
 import joblib
 import flwr as fl
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Union
 from flwr.common import (
     Parameters,
     FitRes,
+    EvaluateRes,
     Scalar,
     parameters_to_ndarrays,
 )
@@ -11,6 +12,22 @@ from baseline_model.model import get_model, set_model_parameters
 
 
 class SaveModelStrategy(fl.server.strategy.FedAvg):
+    def aggregate_evaluate(
+        self,
+        server_round: int,
+        results: List[Tuple[fl.server.client_proxy.ClientProxy, EvaluateRes]],
+        failures: List[Union[Tuple, BaseException]],
+    ) -> Tuple[Optional[float], Dict[str, Scalar]]:
+        if not results:
+            return None, {}
+
+        total_examples = sum(evaluate_res.num_examples for _, evaluate_res in results)
+        if total_examples == 0:
+            print(f"Round {server_round}: All clients returned 0 examples in evaluate — skipping aggregation.")
+            return None, {}
+
+        return super().aggregate_evaluate(server_round, results, failures)
+
     def aggregate_fit(
         self,
         server_round: int,
