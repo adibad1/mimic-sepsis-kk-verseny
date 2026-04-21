@@ -45,8 +45,8 @@ def get_model():
         ("clf",         LogisticRegression(
                             warm_start=True,
                             max_iter=1,
-                            class_weight={0: 1, 1: 3},
-                            C=0.05,
+                            class_weight={0: 1, 1: 15},
+                            C=0.5,
                             solver="saga",
                             tol=1e-3,
                         )),
