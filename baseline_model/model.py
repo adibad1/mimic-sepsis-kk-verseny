@@ -3,6 +3,8 @@ import cloudpickle
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, FunctionTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.neural_network import MLPClassifier
+ 
  
 def get_model():
     def medical_feature_engineering(X):
@@ -42,22 +44,34 @@ def get_model():
             hypotension, time_risk
         ])
  
-    model = Pipeline([
-        ("engineering", FunctionTransformer(medical_feature_engineering)),
-        ("scaler",      StandardScaler()), # [cite: 101]
-        ("clf",         LogisticRegression(
-                            warm_start=True, # 
-                            max_iter=1,
-                            # A 30 és 35 közötti egyensúly, de erősebb regularizációval
-                            class_weight={0: 1.0, 1: 20}, 
-                            C=0.1, # Erősebb büntetés (0.8 helyett), hogy ne szaladjon el az FP [cite: 192]
-                            solver="saga",
-                            tol=1e-3,
-                            penalty="l2", # Segít stabilizálni a súlyokat a kórházak között,
-                            n_jobs=1,
-                            random_state=42
-                        )),
-    ])
+    model =Pipeline([
+    ("engineering", FunctionTransformer(medical_feature_engineering)),
+ 
+    # Neural networkhez KÖTELEZŐ
+    ("scaler", StandardScaler()),
+ 
+    ("clf", MLPClassifier(
+        # ---- ARCHITEKTÚRA ----
+        hidden_layer_sizes=(32, 16),
+        activation="relu",
+ 
+        # ---- OPTIMIZÁLÁS (FL‑BARÁT) ----
+        solver="adam",
+        learning_rate_init=1e-3,
+        max_iter=1,              # FL step = 1 optimal lépés
+        warm_start=True,         # globális súlyok továbbélése
+ 
+        # ---- REGULARIZÁCIÓ (FP kontroll) ----
+        alpha=5e-4,              # L2 – FP‑robbanás ellen
+ 
+        # ---- STABILITÁS ----
+        batch_size=128,
+        shuffle=True,
+        tol=1e-3,
+ 
+        random_state=42,
+    )),
+])
  
     model.fit(np.zeros((5, 40)), np.array([0, 1, 0, 1, 0])) # [cite: 97]
     return model
