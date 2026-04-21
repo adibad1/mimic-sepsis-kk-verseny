@@ -49,8 +49,8 @@ def get_model():
                             warm_start=True, # 
                             max_iter=1,
                             # A 30 és 35 közötti egyensúly, de erősebb regularizációval
-                            class_weight={0: 1.0, 1: 5}, 
-                            C=0.5, # Erősebb büntetés (0.8 helyett), hogy ne szaladjon el az FP [cite: 192]
+                            class_weight={0: 1.0, 1: 60}, 
+                            C=1.0, # Erősebb büntetés (0.8 helyett), hogy ne szaladjon el az FP [cite: 192]
                             solver="saga",
                             tol=1e-3,
                             penalty="l2", # Segít stabilizálni a súlyokat a kórházak között,
