@@ -3,47 +3,6 @@ import cloudpickle
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, FunctionTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.base import BaseEstimator, ClassifierMixin
-
-
-class ThresholdClassifier(BaseEstimator, ClassifierMixin):
-    """LogisticRegression wrapper ami 0.3 küszöböt használ 0.5 helyett."""
-    def __init__(self, estimator, threshold=0.3):
-        self.estimator = estimator
-        self.threshold = threshold
-
-    def fit(self, X, y):
-        self.estimator.fit(X, y)
-        self.classes_ = self.estimator.classes_
-        return self
-
-    def predict_proba(self, X):
-        return self.estimator.predict_proba(X)
-
-    def predict(self, X):
-        proba = self.predict_proba(X)[:, 1]
-        return (proba > self.threshold).astype(int)
-
-    # FL miatt szükséges — a strategy ezeken keresztül olvassa/írja a súlyokat
-    @property
-    def coef_(self):
-        return self.estimator.coef_
-
-    @coef_.setter
-    def coef_(self, value):
-        self.estimator.coef_ = value
-
-    @property
-    def intercept_(self):
-        return self.estimator.intercept_
-
-    @intercept_.setter
-    def intercept_(self, value):
-        self.estimator.intercept_ = value
-
-    @property
-    def warm_start(self):
-        return self.estimator.warm_start
 
 
 def get_model():
@@ -80,19 +39,17 @@ def get_model():
             wbc_flag, composite_risk
         ])
 
-    base_lr = LogisticRegression(
-        warm_start=True,
-        max_iter=1,
-        class_weight={0: 1, 1: 3},
-        C=0.05,
-        solver="saga",
-        tol=1e-3,
-    )
-
     model = Pipeline([
         ("engineering", FunctionTransformer(medical_feature_engineering)),
         ("scaler",      StandardScaler()),
-        ("clf",         ThresholdClassifier(estimator=base_lr, threshold=0.3)),
+        ("clf",         LogisticRegression(
+                            warm_start=True,
+                            max_iter=1,
+                            class_weight={0: 1, 1: 3},
+                            C=0.05,
+                            solver="saga",
+                            tol=1e-3,
+                        )),
     ])
 
     model.fit(np.zeros((5, 40)), np.array([0, 1, 0, 1, 0]))
