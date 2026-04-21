@@ -1,14 +1,12 @@
 import numpy as np
 import cloudpickle
-from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler, FunctionTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.neural_network import MLPClassifier
- 
  
 def get_model():
     def medical_feature_engineering(X):
-        # Alap indexek mentése [cite: 96]
+        # Alap indexek kinyerése
         hr    = X[:, [0]]   # Pulzus
         sbp   = X[:, [3]]   # Vérnyomás
         map_  = X[:, [4]]   # MAP
@@ -16,25 +14,16 @@ def get_model():
         temp  = X[:, [2]]   # Hőmérséklet
         lact  = X[:, [22]]  # Laktát
         wbc   = X[:, [31]]  # Fehérvérsejt
-        age   = X[:, [34]]  # Kor
         iculos= X[:, [39]]  # Eltöltött idő
  
-        # 1. Klinikai indexek (Interakciók)
-        shock_index = hr / (sbp + 1e-6) # [cite: 100]
-        # NEWS (National Early Warning Score) elemek imitálása
-        # A szepszisben a vérnyomás esik, a pulzus nő -> a hányadosuk négyzetesen is fontos lehet
-        shock_index_sq = np.square(shock_index) 
-        # 2. Nem-lineáris transzformációk (hogy a LogReg "görbéket" is lásson)
-        # A laktát és a pulzus nem lineárisan veszélyes: a magas érték exponenciálisan rosszabb
+        # Feature Engineering (az eddigi legjobb orvosi logikák)
+        shock_index = hr / (sbp + 1e-6)
+        shock_index_sq = np.square(shock_index)
         log_lactate = np.log1p(np.abs(lact))
         hr_squared  = np.square(hr / 100.0)
- 
-        # 3. Klinikai küszöbök (Flag-ek) 
         lactate_high = (lact > 2.0).astype(float)
-        wbc_danger   = ((wbc > 12.0) | (wbc < 4.0)).astype(float) # A túl alacsony WBC is szepszis jel!
+        wbc_danger   = ((wbc > 12.0) | (wbc < 4.0)).astype(float)
         hypotension  = (sbp < 90.0).astype(float)
- 
-        # 4. Időfaktor (A kockázat az idővel nem lineárisan nő)
         time_risk = np.sqrt(iculos + 1e-6)
  
         return np.hstack([
@@ -44,45 +33,40 @@ def get_model():
             hypotension, time_risk
         ])
  
-    model =Pipeline([
-    ("engineering", FunctionTransformer(medical_feature_engineering)),
+    model = Pipeline([
+        ("engineering", FunctionTransformer(medical_feature_engineering)),
+        ("scaler",      StandardScaler()),
+        ("clf",         MLPClassifier(
+                            hidden_layer_sizes=(32, 16),
+                            activation='relu',
+                            solver='adam',
+                            max_iter=1,          # FL körönként 1 iteráció
+                            warm_start=True,     # Kell a folyamatos tanuláshoz
+                            alpha=0.01,          # Regularizáció
+                            random_state=42,
+                            batch_size=128
+                        )),
+    ])
  
-    # Neural networkhez KÖTELEZŐ
-    ("scaler", StandardScaler()),
- 
-    ("clf", MLPClassifier(
-        # ---- ARCHITEKTÚRA ----
-        hidden_layer_sizes=(32, 16),
-        activation="relu",
- 
-        # ---- OPTIMIZÁLÁS (FL‑BARÁT) ----
-        solver="adam",
-        learning_rate_init=1e-3,
-        max_iter=1,              # FL step = 1 optimal lépés
-        warm_start=True,         # globális súlyok továbbélése
- 
-        # ---- REGULARIZÁCIÓ (FP kontroll) ----
-        alpha=5e-4,              # L2 – FP‑robbanás ellen
- 
-        # ---- STABILITÁS ----
-        batch_size=128,
-        shuffle=True,
-        tol=1e-3,
- 
-        random_state=42,
-    )),
-])
- 
-    model.fit(np.zeros((5, 40)), np.array([0, 1, 0, 1, 0])) # [cite: 97]
+    # Inicializálás dummy adatokkal (40 bemeneti változó)
+    model.fit(np.zeros((5, 40)), np.array([0, 1, 0, 1, 0]))
     return model
  
-# --- A get_parameters, set_parameters, save/load marad változatlan [cite: 98, 104] ---
+# --- JAVÍTOTT PARAMÉTERKEZELÉS MLP-HEZ ---
+ 
 def get_model_parameters(model):
-    return [model.named_steps["clf"].coef_, model.named_steps["clf"].intercept_]
+    clf = model.named_steps["clf"]
+    # Az MLP-nél a coefs_ és intercepts_ listák, ezeket fűzzük össze
+    return clf.coefs_ + clf.intercepts_
  
 def set_model_parameters(model, parameters):
-    model.named_steps["clf"].coef_      = parameters[0]
-    model.named_steps["clf"].intercept_ = parameters[1]
+    clf = model.named_steps["clf"]
+    # Meghatározzuk a rétegek számát (hidden layers + output layer)
+    # hidden_layer_sizes=(32, 16) -> ez 2 hidden + 1 output = 3 réteg
+    n_layers = len(clf.hidden_layer_sizes) + 1
+    # Szétosztjuk a kapott listát súlyokra és eltolásokra
+    clf.coefs_ = parameters[:n_layers]
+    clf.intercepts_ = parameters[n_layers:]
  
 def save_model(model, path="final_model.pkl"):
     with open(path, "wb") as f:
