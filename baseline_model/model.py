@@ -37,14 +37,15 @@ def get_model():
         ("engineering", FunctionTransformer(medical_feature_engineering)),
         ("scaler",      StandardScaler()),
         ("clf",         MLPClassifier(
-                            hidden_layer_sizes=(32, 16),
-                            activation='relu',
-                            solver='adam',
-                            max_iter=1,          # FL körönként 1 iteráció
-                            warm_start=True,     # Kell a folyamatos tanuláshoz
-                            alpha=0.01,          # Regularizáció
-                            random_state=42,
-                            batch_size=128
+                            hidden_layer_sizes=(64, 32, 16),
+                            activation="tanh",
+                            solver="adam",
+                            learning_rate_init=3e-4,
+                            batch_size=32,
+                            alpha=0.001,
+                            max_iter=1,
+                            warm_start=True,
+                            random_state=42
                         )),
     ])
  
