@@ -6,66 +6,61 @@ from sklearn.pipeline import Pipeline
  
 def get_model():
     def medical_feature_engineering(X):
-        # Indexek a FEATURE_COLUMNS alapján
+        # Alap indexek mentése [cite: 96]
         hr    = X[:, [0]]   # Pulzus
-        sbp   = X[:, [3]]   # Szisztolés vérnyomás
+        sbp   = X[:, [3]]   # Vérnyomás
         map_  = X[:, [4]]   # MAP
-        dbp   = X[:, [5]]   # Diasztolés vérnyomás
-        resp  = X[:, [6]]   # Légzésszám
+        resp  = X[:, [6]]   # Légzés
         temp  = X[:, [2]]   # Hőmérséklet
-        bun   = X[:, [15]]  # BUN
-        creat = X[:, [19]]  # Kreatinin
         lact  = X[:, [22]]  # Laktát
-        wbc   = X[:, [31]]  # WBC
+        wbc   = X[:, [31]]  # Fehérvérsejt
         age   = X[:, [34]]  # Kor
-        iculos= X[:, [39]]  # ICULOS
+        iculos= X[:, [39]]  # Eltöltött idő
  
-        # --- Klinikai mutatók ---
-        shock_index      = hr / (sbp + 1e-6)
-        bun_creat_ratio  = bun / (creat + 1e-6)
-        map_hr_ratio     = map_ / (hr + 1e-6)
-        resp_hr_ratio    = resp / (hr + 1e-6)
-        pulse_pressure   = sbp - dbp
-        # --- Dinamikus rizikó indikátorok ---
-        # Sirs-szerű jelek: magas pulzus + magas légzésszám vagy láz
-        fever_flag       = (temp > 38.0).astype(float)
-        tachycardia      = (hr > 90.0).astype(float)
-        tachypnea        = (resp > 20.0).astype(float)
-        # Súlyos állapot jelzők
-        lactate_flag     = (lact > 2.0).astype(float)
-        wbc_flag         = (wbc > 12.0).astype(float)
-        icu_long_flag    = (iculos > 48).astype(float) # 48 óra után nő a kockázat
+        # 1. Klinikai indexek (Interakciók)
+        shock_index = hr / (sbp + 1e-6) # [cite: 100]
+        # NEWS (National Early Warning Score) elemek imitálása
+        # A szepszisben a vérnyomás esik, a pulzus nő -> a hányadosuk négyzetesen is fontos lehet
+        shock_index_sq = np.square(shock_index) 
+        # 2. Nem-lineáris transzformációk (hogy a LogReg "görbéket" is lásson)
+        # A laktát és a pulzus nem lineárisan veszélyes: a magas érték exponenciálisan rosszabb
+        log_lactate = np.log1p(np.abs(lact))
+        hr_squared  = np.square(hr / 100.0)
  
-        # Összetett rizikó pontszám (több tünet együttese)
-        composite_risk   = shock_index + lactate_flag + wbc_flag + tachycardia + tachypnea
+        # 3. Klinikai küszöbök (Flag-ek) 
+        lactate_high = (lact > 2.0).astype(float)
+        wbc_danger   = ((wbc > 12.0) | (wbc < 4.0)).astype(float) # A túl alacsony WBC is szepszis jel!
+        hypotension  = (sbp < 90.0).astype(float)
+ 
+        # 4. Időfaktor (A kockázat az idővel nem lineárisan nő)
+        time_risk = np.sqrt(iculos + 1e-6)
  
         return np.hstack([
-            X,
-            shock_index, bun_creat_ratio,
-            map_hr_ratio, resp_hr_ratio,
-            pulse_pressure, lactate_flag,
-            wbc_flag, icu_long_flag,
-            fever_flag, composite_risk
+            X, 
+            shock_index, shock_index_sq, log_lactate, 
+            hr_squared, lactate_high, wbc_danger, 
+            hypotension, time_risk
         ])
  
     model = Pipeline([
         ("engineering", FunctionTransformer(medical_feature_engineering)),
-        ("scaler",      StandardScaler()),
+        ("scaler",      StandardScaler()), # [cite: 101]
         ("clf",         LogisticRegression(
-                            warm_start=True,
+                            warm_start=True, # 
                             max_iter=1,
-                            # Drasztikusan megemelt súly az FN csökkentése érdekében
-                            class_weight={0: 1, 1: 35}, 
-                            C=1, # Kicsit több szabadság a tanulásnak
+                            # A 30 és 35 közötti egyensúly, de erősebb regularizációval
+                            class_weight={0: 1, 1: 32}, 
+                            C=0.1, # Erősebb büntetés (0.8 helyett), hogy ne szaladjon el az FP [cite: 192]
                             solver="saga",
                             tol=1e-3,
+                            penalty="l2" # Segít stabilizálni a súlyokat a kórházak között
                         )),
     ])
  
-    # 40 alap + 10 új feature = 50 bemenet
-    model.fit(np.zeros((5, 40)), np.array([0, 1, 0, 1, 0]))
+    model.fit(np.zeros((5, 40)), np.array([0, 1, 0, 1, 0])) # [cite: 97]
     return model
  
+# --- A get_parameters, set_parameters, save/load marad változatlan [cite: 98, 104] ---
 def get_model_parameters(model):
     return [model.named_steps["clf"].coef_, model.named_steps["clf"].intercept_]
  
