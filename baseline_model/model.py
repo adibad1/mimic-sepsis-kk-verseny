@@ -53,7 +53,7 @@ def get_model():
                             C=0.5, # Erősebb büntetés (0.8 helyett), hogy ne szaladjon el az FP [cite: 192]
                             solver="saga",
                             tol=1e-3,
-                            penalty="l2" # Segít stabilizálni a súlyokat a kórházak között,
+                            penalty="l2", # Segít stabilizálni a súlyokat a kórházak között,
                             n_jobs=1,
                             random_state=42
                         )),
