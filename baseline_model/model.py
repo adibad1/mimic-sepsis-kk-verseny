@@ -55,8 +55,8 @@ def get_model():
                             warm_start=True,
                             max_iter=1,
                             # Drasztikusan megemelt súly az FN csökkentése érdekében
-                            class_weight={0: 1, 1: 45}, 
-                            C=0.8, # Kicsit több szabadság a tanulásnak
+                            class_weight={0: 1, 1: 30}, 
+                            C=1, # Kicsit több szabadság a tanulásnak
                             solver="saga",
                             tol=1e-3,
                         )),
