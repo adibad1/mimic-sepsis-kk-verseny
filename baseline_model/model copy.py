@@ -16,7 +16,7 @@ def get_model():
         hr = X[:, [0]]
         sbp = X[:, [3]]
         bun = X[:, [15]]
-        creat = X[:, [19]]
+        # creat = X[:, [19]
         shock_index = hr / (sbp + 1e-6)
         bun_creat_ratio = bun / (creat + 1e-6)
         return np.hstack([X, shock_index, bun_creat_ratio])
